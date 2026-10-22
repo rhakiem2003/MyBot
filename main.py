@@ -19,8 +19,8 @@ except Exception:
 # Konfigurasi Gemini AI
 if kunci_ai:
     # Jika baris di bawah ini tersensor (***), ganti menjadi: genai.configure(api_key=***
-    genai.configure(api_key=***
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    genai.configure(api_key=kunci_ai)
+    model = genai.GenerativeModel('gemini-3.8-flash')
 
 # Konfigurasi Bot Telegram
 bot = Bot(token=token_bot) if token_bot else None
