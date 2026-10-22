@@ -6,18 +6,24 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 import google.generativeai as genai
 
-# --- KONFIGURASI ---
-# Streamlit mengambil Secrets secara otomatis dari st.secrets
-TOKEN=st.sec...EN")
-GEMINI_KEY=st.sec...EY")
+# --- KONFIGURASI SECRETS STREAMLIT ---
+# Kita mengambil kunci dari menu Settings > Secrets di Streamlit
+try:
+    # Jika sistem menyensor bagian ini, lihat Panduan Perbaikan di bawah
+    token_bot = st.secrets["TELEGRAM_TOKEN"]
+    kunci_ai = st.secrets["GEMINI_API_KEY"]
+except Exception:
+    token_bot = None
+    kunci_ai = None
 
 # Konfigurasi Gemini AI
-if GEMINI_KEY:
-    genai.configure(api_key=GEMINI_KEY)
+if kunci_ai:
+    # Jika baris di bawah ini tersensor (***), ganti menjadi: genai.configure(api_key=***
+    genai.configure(api_key=***
     model = genai.GenerativeModel('gemini-1.5-flash')
 
 # Konfigurasi Bot Telegram
-bot = Bot(token=TOKEN) if TOKEN else None
+bot = Bot(token=token_bot) if token_bot else None
 dp = Dispatcher()
 
 @dp.message(Command("start"))
@@ -33,34 +39,29 @@ async def handle_message(message: types.Message):
     except Exception as e:
         await message.answer(f"Maaf, terjadi kesalahan: {str(e)}")
 
-# Fungsi untuk menjalankan bot di background agar tidak membekukan website
 def run_bot():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    
     async def start():
         try:
             await bot.delete_webhook(drop_pending_updates=True)
             await dp.start_polling(bot)
         except Exception as e:
             print(f"Bot Error: {e}")
-
     loop.run_until_complete(start())
 
-# --- TAMPILAN WEBSITE ---
+# --- TAMPILAN WEBSITE STREAMLIT ---
 st.set_page_config(page_title="My AI Bot Status", page_icon="🤖")
 st.title("🤖 Bot AI Telegram Status")
 
-if TOKEN and GEMINI_KEY:
-    st.success("✅ API Keys terdeteksi! Bot sedang mencoba berjalan di latar belakang.")
-    
-    # Menjalankan bot di background hanya satu kali
+if token_bot and kunci_ai:
+    st.success("✅ API Keys terdeteksi! Bot sedang berjalan di latar belakang.")
     if 'bot_started' not in st.session_state:
         thread = threading.Thread(target=run_bot, daemon=True)
         thread.start()
         st.session_state['bot_started'] = True
-        st.write("🚀 Bot telah dimulai di latar belakang!")
+        st.write("🚀 Bot telah dimulai!")
 else:
     st.error("❌ API Keys belum diatur di Settings > Secrets!")
 
-st.info("Buka Telegram Anda dan kirim pesan ke bot untuk mencoba!")
+st.info("Kirim pesan ke bot Anda di Telegram untuk mencoba!")
