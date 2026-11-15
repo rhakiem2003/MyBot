@@ -14,9 +14,9 @@ def get_secret(name: str):
 
     try:
         if hasattr(st, "secrets") and name in st.secrets:
-            v = st.secrets[name]
-            if v:
-                return str(v)
+            value = st.secrets[name]
+            if value:
+                return str(value)
     except Exception:
         pass
 
@@ -26,13 +26,60 @@ def get_secret(name: str):
 TELEGRAM_TOKEN = get_secret("TELEGRAM_TOKEN")
 GEMINI_API_KEY = get_secret("GEMINI_API_KEY")
 
-model = None
+
+def get_model_names() -> list[str]:
+    """Return the primary Gemini model followed by configured fallback models."""
+    primary = get_secret("GEMINI_MODEL") or "gemini-1.5-flash"
+    configured_fallbacks = get_secret("GEMINI_FALLBACK_MODELS") or "gemini-1.5-pro"
+    names = [primary.strip()]
+    names.extend(name.strip() for name in configured_fallbacks.split(","))
+    # Keep order while removing blanks and duplicates.
+    return list(dict.fromkeys(name for name in names if name))
+
+
+MODEL_NAMES = get_model_names()
 if GEMINI_API_KEY:
-    try:
-        genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel("gemini-1.5-flash")
-    except Exception as exc:
-        print(f"Gemini config error: {exc}")
+    genai.configure(api_key=GEMINI_API_KEY)
+
+
+def is_model_unavailable(error: Exception) -> bool:
+    """Only fall back for model lookup/availability errors, not bad credentials or quota."""
+    response = getattr(error, "response", None)
+    status_code = getattr(error, "status_code", None) or getattr(response, "status_code", None)
+    if status_code == 404:
+        return True
+
+    message = str(error).lower()
+    return any(
+        phrase in message
+        for phrase in (
+            "model not found",
+            "model is not found",
+            "not found for api version",
+            "model is not supported",
+            "model not supported",
+        )
+    )
+
+
+def generate_with_fallback(prompt: str):
+    """Try configured models in order, falling back only when a model is unavailable."""
+    last_error = None
+    for model_name in MODEL_NAMES:
+        try:
+            model = genai.GenerativeModel(model_name)
+            return model.generate_content(prompt)
+        except Exception as exc:
+            if not is_model_unavailable(exc):
+                raise
+            last_error = exc
+            print(f"Gemini model '{model_name}' is unavailable; trying the next fallback.")
+
+    raise RuntimeError(
+        "No configured Gemini model is available. Set GEMINI_MODEL and/or "
+        "GEMINI_FALLBACK_MODELS to model names enabled for your API key."
+    ) from last_error
+
 
 bot = Bot(token=TELEGRAM_TOKEN) if TELEGRAM_TOKEN else None
 dp = Dispatcher()
@@ -54,7 +101,7 @@ async def cmd_start(message: types.Message):
 
 @dp.message()
 async def handle_message(message: types.Message):
-    if bot is None or model is None:
+    if bot is None or not GEMINI_API_KEY:
         return
 
     if message.text is None:
@@ -66,7 +113,7 @@ async def handle_message(message: types.Message):
 
     try:
         await bot.send_chat_action(chat_id=message.chat.id, action="typing")
-        response = model.generate_content(prompt)
+        response = generate_with_fallback(prompt)
         answer = getattr(response, "text", "")
         if not answer:
             answer = "Saya tidak bisa menjawab saat ini."
@@ -96,8 +143,9 @@ def run_bot():
 st.set_page_config(page_title="My AI Bot", page_icon="🤖")
 st.title("🤖 Bot AI Telegram")
 
-if TELEGRAM_TOKEN and GEMINI_API_KEY and model:
+if TELEGRAM_TOKEN and GEMINI_API_KEY:
     st.success("✅ Kunci terdeteksi. Bot siap dijalankan.")
+    st.caption(f"Model utama: {MODEL_NAMES[0]} · fallback tersedia: {len(MODEL_NAMES) - 1}")
     if "bot_started" not in st.session_state:
         thread = threading.Thread(target=run_bot, daemon=True)
         thread.start()
